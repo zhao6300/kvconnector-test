@@ -22,3 +22,4 @@ dist/
 *.o
 *.so
 *.out
+local_mem_tests/gpu_kernel_rw

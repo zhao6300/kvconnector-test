@@ -1,10 +1,11 @@
 # comm
 
-仓库内是小型、定向的 GPU 通信与 KV-transfer connector 测试脚本，集中在 `bench/` 目录下。主要说明见 [`bench/results.md`](bench/results.md)。
+仓库内是小型、定向的 GPU 通信与 KV-transfer connector 测试脚本，集中在 `bench/` 目录下。主要说明见 [`bench/results.md`](bench/results.md) 和 [`dvram_results.md`](dvram_results.md)。
 
 ## 目录结构
 
 - `bench/` : CUDA IPC、Mooncake、NIXL、CUDA P2P、NCCL、FlashInfer 相关基准脚本。
+- `local_mem_tests/` : 本机 GPU/host memory 对照测试，覆盖 PyTorch、raw CUDA memcpy、CUDA pinned pool、raw CUDA kernel 和 Triton kernel 读写。
 - `bench/results.md` : 汇总的基准结果和连接器语义说明。
 - `run_logs/` : 少量代表性运行的 stdout/stderr 快照。
 
@@ -16,6 +17,16 @@
 /opt/venv/bin/python bench/gpu_ipc_bw.py
 /opt/venv/bin/python -m pytest -q bench/mooncake_transfer_test.py
 torchrun --nproc_per_node=2 bench/nccl_bw.py
+```
+
+按路径分开的本地内存对照测试在 `local_mem_tests/`。raw CUDA 与 Triton kernel 都不用 PyTorch copy，也不调用 `memcpyAsync`：
+
+```bash
+nvcc -O3 -std=c++17 -arch=native local_mem_tests/gpu_kernel_rw.cu -o local_mem_tests/gpu_kernel_rw
+./local_mem_tests/gpu_kernel_rw --gpu 0 --size $((256*1024*1024)) --warmup 5 --iters 10
+
+/opt/venv/bin/python local_mem_tests/gpu_kernel_rw_triton.py \
+  --gpu 0 --size $((256*1024*1024)) --warmup 5 --iters 10
 ```
 
 NIXL 需要分别启动 target 和 initiator：
@@ -67,7 +78,7 @@ MC_INTRANODE_NVLINK=1 MC_USE_NVLINK_IPC=1 \
 
 ## 阅读结果
 
-`bench/results.md` 包含实测带宽和对应通信路径的简单解读，另外还给了 Nixl、Mooncake、LMCache、FlexKV 的连接器对比。
+`bench/results.md` 包含实测带宽和对应通信路径的简单解读，另外还给了 Nixl、Mooncake、LMCache、FlexKV 的连接器对比。`local_mem_tests/` 中的结果用于区分本机显存、pinned host zero-copy、pinned pool、PyTorch 拷贝路径和 Triton kernel 路径。
 
 ## 注意事项
 
