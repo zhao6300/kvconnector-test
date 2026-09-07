@@ -1,16 +1,16 @@
 # comm
 
-This repository holds small, focused GPU communication and KV-transfer connector tests divided across a few scripts in the `bench/` directory. The main summary is in [`bench/results.md`](bench/results.md).
+仓库内是小型、定向的 GPU 通信与 KV-transfer connector 测试脚本，集中在 `bench/` 目录下。主要说明见 [`bench/results.md`](bench/results.md)。
 
-## Layout
+## 目录结构
 
-- `bench/` - benchmark scripts for CUDA IPC, Mooncake, NIXL, CUDA P2P, NCCL, and FlashInfer-based paths.
-- `bench/results.md` - consolidated benchmark and connector-semantic notes.
-- `run_logs/` - stdout/stderr snapshots from a few representative runs.
+- `bench/` : CUDA IPC、Mooncake、NIXL、CUDA P2P、NCCL、FlashInfer 相关基准脚本。
+- `bench/results.md` : 汇总的基准结果和连接器语义说明。
+- `run_logs/` : 少量代表性运行的 stdout/stderr 快照。
 
-## Run benchmarks
+## 运行基准
 
-The scripts expect the existing local environment at `/opt/venv`.
+脚本假设使用本机已有的 `/opt/venv` 环境。
 
 ```bash
 /opt/venv/bin/python bench/gpu_ipc_bw.py
@@ -18,24 +18,24 @@ The scripts expect the existing local environment at `/opt/venv`.
 torchrun --nproc_per_node=2 bench/nccl_bw.py
 ```
 
-For the NIXL benchmark, start the target and initiator separately:
+NIXL 需要分别启动 target 和 initiator：
 
 ```bash
 /opt/venv/bin/python bench/nixl_bw.py --mode target --gpu 1 --size 67108864 --warmup 2 --iters 10
 /opt/venv/bin/python bench/nixl_bw.py --mode initiator --gpu 0 --ip 127.0.0.1 --size 67108864 --warmup 2 --iters 10
 ```
 
-For Mooncake transfer testing:
+Mooncake 传输测试示例如下：
 
-```bash
+```
 /opt/venv/bin/python bench/mooncake_transfer_cross_gpu.py --source-gpu 0 --target-gpu 1 --size 67108864 --warmup 10 --iters 50
 ```
 
-## Reading results
+## 阅读结果
 
-`bench/results.md` contains the measured bandwidth and a short interpretation of what each path does. It also has a separate connector comparison covering Nixl, Mooncake, LMCache, and FlexKV.
+`bench/results.md` 包含实测带宽和对应通信路径的简单解读，另外还给了 Nixl、Mooncake、LMCache、FlexKV 的连接器对比。
 
-## Notes
+## 注意事项
 
-- The focus is on explaining and measuring communication paths, not on packaging a library.
-- Running a benchmark will create a few lightweight local artifacts such as Python/pytest caches and small log files. Those are intentionally not kept in version control.
+- 仓库的重点是解释和测量通信路径，而不是打包成一个库。
+- 运行基准会产生一些轻量的本地缓存和少量日志；这些默认走 `.gitignore`。
