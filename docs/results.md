@@ -10,10 +10,10 @@
 | Mooncake，GPU0 → GPU1 | 64 MiB | write 1.385 GiB/s；read 1.415 GiB/s | Mooncake TransferEngine 使用跨 GPU 已注册 VRAM；无 RDMA，本机 TCP fallback 控制实际速度 | source 在 `cuda:0`，target 在 `cuda:1`；两个 TransferEngine 通信 | `bench/mooncake_transfer_cross_gpu.py --source-gpu 0 --target-gpu 1` |
 | NIXL UCX，GPU0 → GPU1 | 256 MiB | 2.84–3.02 | `UCX_TLS=sm,cuda_copy,cuda_ipc,tcp`；`UCX_CUDA_IPC_ENABLE_GET_ZCOPY=on` 强制启用 CUDA IPC `get_zcopy` | target 在 GPU1，initiator 在 GPU0；显式注册 VRAM；同步 READ，实测 10 次；64/128/256 MiB 分别是 2.84/2.91/2.89–3.02 GB/s | `bench/nixl_bw.py --mode target/initiator --gpu 1/0 --size 268435456` |
 | 原生 CUDA P2P，GPU0 → GPU1 | 64 MiB | 33.09 | 直接 CUDA `cudaMemcpyPeer` / CUDA P2P over PCIe | 原生 CUDA p2p benchmark；GPU0 直拷到 GPU1 | `bench/p2p_bw.cu` |
-| PyTorch NCCL P2P | 64 MiB | 34.56 | PyTorch NCCL `dist.send/recv`，NCCL 选择 CUDA P2P/PCIe | 两个 `torchrun` rank，rank0 → GPU0，rank1 → GPU1；同步 send/recv，50 次实测 | `run_logs/nccl_bw.log` |
-| PyTorch NCCL ring AllReduce | 64 MiB | 29.16 effective | NCCL ring，GPU0/GPU1 之间 | 两个 rank；20 次实测；effective BW 扣除 ring 两次流贡献 | `run_logs/nccl_bw.log` |
-| PyTorch NCCL ring AllReduce | 256 MiB | 29.80 effective | NCCL ring，GPU0/GPU1 之间 | 同上，这是本次测到的最大消息规模 | `run_logs/nccl_bw.log` |
-| FlashInfer PCIe IPC AllReduce | 16 MiB bf16 | 20.29 | SM-resident buffer，通过 CUDA IPC/GPU 共享内存通信 | 两个 rank 在 GPU0/GPU1 上使用 FlashInfer `PcieIpcAllReduceWorkspace`；50 次实测；日志列名 `Gb/s` 但计算公式返回的是 byte bandwidth | `bench/pcie_ipc_ar.py` + `run_logs/pcie_ipc_ar.log` |
+| PyTorch NCCL P2P | 64 MiB | 34.56 | PyTorch NCCL `dist.send/recv`，NCCL 选择 CUDA P2P/PCIe | 两个 `torchrun` rank，rank0 → GPU0，rank1 → GPU1；同步 send/recv，50 次实测 | `logs/nccl_bw.log` |
+| PyTorch NCCL ring AllReduce | 64 MiB | 29.16 effective | NCCL ring，GPU0/GPU1 之间 | 两个 rank；20 次实测；effective BW 扣除 ring 两次流贡献 | `logs/nccl_bw.log` |
+| PyTorch NCCL ring AllReduce | 256 MiB | 29.80 effective | NCCL ring，GPU0/GPU1 之间 | 同上，这是本次测到的最大消息规模 | `logs/nccl_bw.log` |
+| FlashInfer PCIe IPC AllReduce | 16 MiB bf16 | 20.29 | SM-resident buffer，通过 CUDA IPC/GPU 共享内存通信 | 两个 rank 在 GPU0/GPU1 上使用 FlashInfer `PcieIpcAllReduceWorkspace`；50 次实测；日志列名 `Gb/s` 但计算公式返回的是 byte bandwidth | `bench/pcie_ipc_ar.py` + `logs/pcie_ipc_ar.log` |
 
 ### GPU kernel 直接访问 memory
 

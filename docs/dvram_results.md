@@ -103,23 +103,23 @@
 ## 运行方式
 
 ```bash
-nvcc -O3 -std=c++17 -arch=native local_mem_tests/gpu_kernel_rw.cu \
-     -o local_mem_tests/gpu_kernel_rw
-./local_mem_tests/gpu_kernel_rw --gpu 0 --size $((256*1024*1024)) --warmup 5 --iters 10
+nvcc -O3 -std=c++17 -arch=native tests/local/gpu_kernel_rw.cu \
+     -o tests/local/gpu_kernel_rw
+./tests/local/gpu_kernel_rw --gpu 0 --size $((256*1024*1024)) --warmup 5 --iters 10
 
-/opt/venv/bin/python local_mem_tests/gpu_kernel_rw_triton.py \
+/opt/venv/bin/python tests/local/gpu_kernel_rw_triton.py \
   --gpu 0 --size $((256*1024*1024)) --warmup 5 --iters 10
 
-/opt/venv/bin/python local_mem_tests/gpu_mem_read.py \
+/opt/venv/bin/python tests/local/gpu_mem_read.py \
   --gpu 0 --size $((256*1024*1024)) --warmup 5 --iters 10
 
-/opt/venv/bin/python local_mem_tests/torch_mem_read.py \
+/opt/venv/bin/python tests/local/torch_mem_read.py \
   --gpu 0 --size $((256*1024*1024)) --warmup 5 --iters 10
 
-/opt/venv/bin/python local_mem_tests/cpu_pinned_pool.py \
+/opt/venv/bin/python tests/local/cpu_pinned_pool.py \
   --gpu 0 --pool-size $((256*1024*1024)) --chunks 64 --warmup 5 --iters 10 --direction h2d
 
-/opt/venv/bin/python local_mem_tests/cpu_pinned_pool.py \
+/opt/venv/bin/python tests/local/cpu_pinned_pool.py \
   --gpu 0 --pool-size $((256*1024*1024)) --chunks 64 --warmup 5 --iters 10 --direction d2h
 ```
 

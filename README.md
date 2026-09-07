@@ -8,44 +8,53 @@
 - API 的行为和实际使用的 DRAM / PCIe / RDMA / IPC 路径是否一致。
 - 本地 GPU 显存、pinned host memory、H2D/D2H、framework copy 之间的带宽差距到底来自哪里。
 
-结果与解释见 [`bench/results.md`](bench/results.md) 和 [`dvram_results.md`](dvram_results.md)。
+结果与解释见 [`docs/results.md`](docs/results.md) 和 [`docs/dvram_results.md`](docs/dvram_results.md)。
 
 ## 目录结构
 
 - `bench/` : GPU 通信、Mooncake、NIXL、CUDA P2P、NCCL、FlashInfer 等基准脚本与 connector 语义说明。
-- `local_mem_tests/` : 本机 GPU/host memory 对照测试，包含 PyTorch、raw CUDA memcpy、CUDA pinned pool、raw CUDA kernel 和 Triton kernel。
-- `bench/results.md` : 实测带宽、通信路径、关键限制和连接器语义。
-- `dvram_results.md` : 本机 GPU 显存、pinned host memory、pinned pool、PyTorch copy 的带宽对照。
-- `run_logs/` : 部分代表性运行的 stdout/stderr 快照。
+- `tests/local/` : 本机 GPU/host memory 对照测试，覆盖 PyTorch、raw CUDA memcpy、CUDA pinned pool、raw CUDA kernel 和 Triton kernel。
+- `docs/` : 实测带宽、通信路径、关键限制和连接器语义，以及复现说明。
+- `logs/` : 部分代表性运行的 stdout/stderr 快照。
+- `scripts/run_all.sh` : 一键复现入口。
 
 ## 运行约定
 
-脚本假设本机使用 `/opt/venv`。仓库本身不提供一键式脚本，直接按场景运行对应命令更可靠。
+脚本假设本机使用 `/opt/venv`。
+
+最快的方式：
+
+```bash
+./scripts/run_all.sh
+./scripts/run_all.sh --full
+```
+
+`--full` 会额外跑 connector / communication 的轻量路径。详细的复现参数和输出含义见 [`docs/repro.md`](docs/repro.md)。
 
 ## 本地内存测试
 
-`local_mem_tests/` 用来把 API 层次和真实硬件路径分开。raw CUDA 与 Triton kernel 都不使用 PyTorch copy，也不走 `memcpyAsync`。
+`tests/local/` 用来把 API 层次和真实硬件路径分开。raw CUDA 与 Triton kernel 都不使用 PyTorch copy，也不走 `memcpyAsync`。
 
 ```bash
-nvcc -O3 -std=c++17 -arch=native local_mem_tests/gpu_kernel_rw.cu \
-     -o local_mem_tests/gpu_kernel_rw
-./local_mem_tests/gpu_kernel_rw \
+nvcc -O3 -std=c++17 -arch=native tests/local/gpu_kernel_rw.cu \
+     -o tests/local/gpu_kernel_rw
+./tests/local/gpu_kernel_rw \
   --gpu 0 --size $((256*1024*1024)) --warmup 5 --iters 10
 
-/opt/venv/bin/python local_mem_tests/gpu_kernel_rw_triton.py \
+/opt/venv/bin/python tests/local/gpu_kernel_rw_triton.py \
   --gpu 0 --size $((256*1024*1024)) --warmup 5 --iters 10
 
-/opt/venv/bin/python local_mem_tests/gpu_mem_read.py \
+/opt/venv/bin/python tests/local/gpu_mem_read.py \
   --gpu 0 --size $((256*1024*1024)) --warmup 5 --iters 10
 
-/opt/venv/bin/python local_mem_tests/torch_mem_read.py \
+/opt/venv/bin/python tests/local/torch_mem_read.py \
   --gpu 0 --size $((256*1024*1024)) --warmup 5 --iters 10
 
-/opt/venv/bin/python local_mem_tests/cpu_pinned_pool.py \
+/opt/venv/bin/python tests/local/cpu_pinned_pool.py \
   --gpu 0 --pool-size $((256*1024*1024)) --chunks 64 \
   --warmup 5 --iters 10 --direction h2d
 
-/opt/venv/bin/python local_mem_tests/cpu_pinned_pool.py \
+/opt/venv/bin/python tests/local/cpu_pinned_pool.py \
   --gpu 0 --pool-size $((256*1024*1024)) --chunks 64 \
   --warmup 5 --iters 10 --direction d2h
 ```
@@ -118,12 +127,13 @@ UCX_TLS=sm,cuda_copy,cuda_ipc,tcp UCX_CUDA_IPC_ENABLE_GET_ZCOPY=on \
 
 ## 阅读结果
 
-- [`bench/results.md`](bench/results.md) 记录实测带宽、真实通信路径、限制条件与连接器语义。
-- [`dvram_results.md`](dvram_results.md) 记录本机 GPU 显存、pinned host memory、pinned pool、PyTorch copy 的带宽对照。
-- [`run_logs/`](run_logs/) 保存的是部分代表性 stdout/stderr，不是独立结果文件。
+- [`docs/results.md`](docs/results.md) 记录实测带宽、真实通信路径、限制条件与连接器语义。
+- [`docs/dvram_results.md`](docs/dvram_results.md) 记录本机 GPU 显存、pinned host memory、pinned pool、PyTorch copy 的带宽对照。
+- [`docs/repro.md`](docs/repro.md) 是按场景写好的复现入口。
+- [`logs/`](logs/) 保存的是部分代表性 stdout/stderr，不是独立结果文件。
 
 ## 注意
 
 - 仓库重点不是跨语言 packaging，而是解释和测量通信路径。
 - 运行基准会产生少量缓存和日志，已由 `.gitignore` 排除。
-- `bench/results.md` 与 `dvram_results.md` 都是“相关性较高”的结果记录，不是“通用性能库”。
+- `docs/results.md` 与 `docs/dvram_results.md` 都是“相关性较高”的结果记录，不是“通用性能库”。
