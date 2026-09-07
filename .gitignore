@@ -1,0 +1,24 @@
+# Python build/test artifacts
+.pytest_cache/
+__pycache__/
+*.py[cod]
+.coverage
+coverage.xml
+
+# Local environments
+.venv/
+venv/
+
+# Common editor/workspace artifacts
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.tmp
+
+# Build outputs
+build/
+dist/
+*.o
+*.so
+*.out
