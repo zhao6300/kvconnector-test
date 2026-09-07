@@ -5,6 +5,7 @@
 | 测试 | 数据量 | 结果 | 通信/存储路径 | 测试 setup | 引用 |
 |---|---:|---:|---|---|---|
 | CUDA IPC，同 GPU | 64 MiB | 1524.5 GiB/s | GPU0 跨进程 CUDA IPC 显存拷贝 | 两个进程都在 `cuda:0` 上分配内存；一个进程导出，另一个进程导入，再用 CUDA events 计时目标侧的 `copy_(src)` | `bench/gpu_ipc_bw.py` |
+| Mooncake `nvlink_intra`，GPU0 → GPU1 | 1 GiB pool / 64 KiB block | write 36.48 GB/s；read 37.33 GB/s | Mooncake 官方 C++ 引擎 + CUDA IPC + `cudaMemcpyBatchAsync`，实际数据面是 GPU0↔GPU1 CUDA P2P over PCIe，不是 TCP | target 在 GPU1，initiator 在 GPU0；`MC_INTRANODE_NVLINK=1`、`MC_USE_NVLINK_IPC=1`；12 个提交线程，5 秒实测；目标是独立进程 | `bench/mooncake_p2p_bench.py --binary /tmp/mooncake-build-minimal/mooncake-transfer-engine/example/transfer_engine_bench --source-gpu 0 --target-gpu 1 --operations write,read --duration 5` |
 | Mooncake，同 GPU | 64 MiB | write 1.496 GiB/s；read 1.469 GiB/s | Mooncake TransferEngine 使用同 GPU 已注册 VRAM；无 RDMA，引擎 RPC/TCP fallback 控制实际速度 | source 和 destination 都在 `cuda:0`；`transfer_sync_write/read`，实测 50 次 | `bench/mooncake_transfer_cross_gpu.py --source-gpu 0 --target-gpu 0` |
 | Mooncake，GPU0 → GPU1 | 64 MiB | write 1.385 GiB/s；read 1.415 GiB/s | Mooncake TransferEngine 使用跨 GPU 已注册 VRAM；无 RDMA，本机 TCP fallback 控制实际速度 | source 在 `cuda:0`，target 在 `cuda:1`；两个 TransferEngine 通信 | `bench/mooncake_transfer_cross_gpu.py --source-gpu 0 --target-gpu 1` |
 | NIXL UCX，GPU0 → GPU1 | 256 MiB | 2.84–3.02 | `UCX_TLS=sm,cuda_copy,cuda_ipc,tcp`；`UCX_CUDA_IPC_ENABLE_GET_ZCOPY=on` 强制启用 CUDA IPC `get_zcopy` | target 在 GPU1，initiator 在 GPU0；显式注册 VRAM；同步 READ，实测 10 次；64/128/256 MiB 分别是 2.84/2.91/2.89–3.02 GB/s | `bench/nixl_bw.py --mode target/initiator --gpu 1/0 --size 268435456` |
@@ -19,7 +20,9 @@
 - `CUDA IPC same GPU` 是跨两个进程但同一 GPU0 内部的显存拷贝路径，不应直接和 GPU0→GPU1 的跨 GPU 行对比。
 - `Raw CUDA P2P`、PyTorch NCCL P2P、PyTorch NCCL ring AllReduce 都受这台机器的 GPU0↔GPU1 PCIe/system interconnect 限制。
 - FlashInfer PCIe IPC AllReduce 使用融合的 GPU 侧 allreduce/proposal 机制，因此 16 MiB 的结果低于该机器的基本 P2P copy；它减少的是 CPU 侧每次 GPU→GPU 同步的干扰。
-- Mooncake 同 GPU / 跨 GPU 都在 1.4-1.5 GiB/s 左右，因为这台机器没有 RDMA HCA，Mooncake 的本地 RPC 控制面加 TCP fallback 决定了主要瓶颈。
+- Mooncake 的 Python TransferEngine 两个样例都在 1.4-1.5 GiB/s 左右，因为这台机器没有 RDMA HCA，Mooncake 的本地 RPC 控制面加 TCP fallback 决定了主要瓶颈。
+- 上面 `Mooncake nvlink_intra` 这一行的结果用到官方 C++ 引擎和 `MC_INTRANODE_NVLINK=1`。它不要求真的有 NVLink，而是在没有 RDMA/HCA 的本机上把 CUDA IPC 作为数据面，随后由 CUDA `cudaMemcpyBatchAsync` 走 GPU0↔GPU1 PCIe P2P。IPC path 之所以比 64 MiB 的 Python 样例读到的 1.4 GiB/s 高出两个数量级，是因为这不再是 RPC 加 TCP fallback。
+- Mooncake 中 `tcp`/`P2PHANDSHAKE` 只是控制/发现路径；`nvlink_intra` + CUDA IPC 才是这里测到的高速数据面。
 - NIXL UCX 在这台机器上必须加 `UCX_CUDA_IPC_ENABLE_GET_ZCOPY=on`，否则 UCX 1.22 会因为没检测到 NVLink 而禁用 CUDA IPC `get_zcopy`，导致回落到低速路径。加上之后 NIXL UCX 能接近 Mooncake 的量级，但仍低于原生 CUDA P2P/NCCL。
 
 ## NIXL UCX CUDA IPC 修正说明

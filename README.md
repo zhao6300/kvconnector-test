@@ -34,6 +34,26 @@ Mooncake 传输测试示例如下：
 /opt/venv/bin/python bench/mooncake_transfer_cross_gpu.py --source-gpu 0 --target-gpu 1 --size 67108864 --warmup 10 --iters 50
 ```
 
+Mooncake 也可以在高带宽路径下直接测 P2P。推荐官方 `transfer_engine_bench`，并给 target/initiator 分别设置 GPU：
+
+```bash
+/opt/venv/bin/python bench/mooncake_p2p_bench.py \
+  --binary /tmp/mooncake-build-minimal/mooncake-transfer-engine/example/transfer_engine_bench \
+  --source-gpu 0 --target-gpu 1 --operations write,read --duration 5
+```
+
+这里的 `nvlink_intra` 名字里带 NVLink，但实现并不强制要求真的有 NVLink。本机没有 NVLink 时仍走 CUDA IPC + `cudaMemcpyBatchAsync` 的 PCIe P2P。需要 `MC_INTRANODE_NVLINK=1` 和 `MC_USE_NVLINK_IPC=1`，否则没有 RDMA 的机器会回落到低速 TCP。官方 benchmark 二进制需要源码构建并打开下面的选项：
+
+```bash
+cmake -S /tmp/mooncake-src -B /tmp/mooncake-build-minimal \
+  -DUSE_CUDA=ON -DUSE_INTRA_NVLINK=ON \
+  -DWITH_STORE=OFF -DWITH_EP=OFF -DBUILD_UNIT_TESTS=OFF
+cmake --build /tmp/mooncake-build-minimal -j 64 \
+  --target mooncake-transfer-engine/example/transfer_engine_bench
+```
+
+如果本机已经有构建产物，也可以用 `MOONCAKE_BENCH_BIN` 环境变量给脚本指定二进制路径。Python 快速测试里的 `protocol=tcp` 只是验证回退路径，不是这套高带宽测项。
+
 ## 阅读结果
 
 `bench/results.md` 包含实测带宽和对应通信路径的简单解读，另外还给了 Nixl、Mooncake、LMCache、FlexKV 的连接器对比。
