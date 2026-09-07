@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """NIXL UCX P2P bandwidth benchmark between two GPUs."""
 import argparse
+import os
 import time
 
 import torch
@@ -17,19 +18,36 @@ def parse_args():
     parser.add_argument("--iters", type=int, default=10)
     parser.add_argument("--mode", choices=["target", "initiator"], default="initiator")
     parser.add_argument("--gpu", type=int, default=0)
+    parser.add_argument(
+        "--ucx-tls",
+        type=str,
+        default="sm,cuda_copy,cuda_ipc,tcp",
+        help=(
+            "UCX_TLS value. cuda_ipc/cuda_copy are VRAM data paths; "
+            "sm supplies the active-message/control lane."
+        ),
+    )
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
+    os.environ["UCX_TLS"] = args.ucx_tls
+    os.environ.setdefault("UCX_CUDA_IPC_ENABLE_GET_ZCOPY", "on")
     torch.set_default_device(f"cuda:{args.gpu}")
     if args.mode == "target":
-        print(f"target_gpu={args.gpu}")
+        print(f"target_gpu={args.gpu} ucx_tls={args.ucx_tls}")
     tensor = torch.ones(args.size, dtype=torch.uint8) if args.mode == "target" else torch.zeros(args.size, dtype=torch.uint8)
 
-    config = nixl_agent_config(True, True, args.port if args.mode == "target" else 0)
+    config = nixl_agent_config(
+        True,
+        True,
+        args.port if args.mode == "target" else 0,
+        backends=[],
+    )
     agent = nixl_agent(args.mode, config)
-    reg_descs = agent.register_memory(tensor)
+    agent.create_backend("UCX", {"engine_config": f"TLS={args.ucx_tls}"})
+    reg_descs = agent.register_memory(tensor, "VRAM")
     local_desc = agent.get_xfer_descs(tensor)
 
     if args.mode == "target":
@@ -82,7 +100,7 @@ def main():
     torch.cuda.synchronize()
     us = sum(times) / len(times) * 1e6
     bw = args.size / sum(times) / 1e9
-    print(f"# NIXL UCX P2P READ (world=2, initiator_gpu={args.gpu})")
+    print(f"# NIXL UCX P2P READ (world=2, initiator_gpu={args.gpu}, ucx_tls={args.ucx_tls})")
     print("size(B)    time(us)   BW_GB/s")
     print(f"{args.size:<10d} {us:<10.2f} {bw:<10.2f}")
 

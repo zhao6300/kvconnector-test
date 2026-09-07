@@ -20,9 +20,12 @@ torchrun --nproc_per_node=2 bench/nccl_bw.py
 
 NIXL 需要分别启动 target 和 initiator：
 
+`cuda_ipc`/`cuda_copy` 是 UCX 的 VRAM 数据路径；`tcp` 只是控制路径。这台机器上 `UCX_CUDA_IPC_ENABLE_GET_ZCOPY=on` 是必要的，用来强制 `cuda_ipc` 的 `get_zcopy`，否则 UCX 会把无 NVLink 的机器视为 IPC 数据面不可用。
+NIXL 示例使用 `sm,cuda_copy,cuda_ipc,tcp`：
+
 ```bash
-/opt/venv/bin/python bench/nixl_bw.py --mode target --gpu 1 --size 67108864 --warmup 2 --iters 10
-/opt/venv/bin/python bench/nixl_bw.py --mode initiator --gpu 0 --ip 127.0.0.1 --size 67108864 --warmup 2 --iters 10
+UCX_TLS=sm,cuda_copy,cuda_ipc,tcp UCX_CUDA_IPC_ENABLE_GET_ZCOPY=on /opt/venv/bin/python bench/nixl_bw.py --mode target --gpu 1 --size 67108864 --warmup 2 --iters 10
+UCX_TLS=sm,cuda_copy,cuda_ipc,tcp UCX_CUDA_IPC_ENABLE_GET_ZCOPY=on /opt/venv/bin/python bench/nixl_bw.py --mode initiator --gpu 0 --ip 127.0.0.1 --size 67108864 --warmup 2 --iters 10
 ```
 
 Mooncake 传输测试示例如下：

@@ -7,7 +7,7 @@
 | CUDA IPC，同 GPU | 64 MiB | 1524.5 GiB/s | GPU0 跨进程 CUDA IPC 显存拷贝 | 两个进程都在 `cuda:0` 上分配内存；一个进程导出，另一个进程导入，再用 CUDA events 计时目标侧的 `copy_(src)` | `bench/gpu_ipc_bw.py` |
 | Mooncake，同 GPU | 64 MiB | write 1.496 GiB/s；read 1.469 GiB/s | Mooncake TransferEngine 使用同 GPU 已注册 VRAM；无 RDMA，引擎 RPC/TCP fallback 控制实际速度 | source 和 destination 都在 `cuda:0`；`transfer_sync_write/read`，实测 50 次 | `bench/mooncake_transfer_cross_gpu.py --source-gpu 0 --target-gpu 0` |
 | Mooncake，GPU0 → GPU1 | 64 MiB | write 1.385 GiB/s；read 1.415 GiB/s | Mooncake TransferEngine 使用跨 GPU 已注册 VRAM；无 RDMA，本机 TCP fallback 控制实际速度 | source 在 `cuda:0`，target 在 `cuda:1`；两个 TransferEngine 通信 | `bench/mooncake_transfer_cross_gpu.py --source-gpu 0 --target-gpu 1` |
-| NIXL UCX，GPU0 → GPU1 | 64 MiB | 0.04 | UCX CUDA transport，绑定 `TLS=cuda_copy,tcp` | target 在 GPU1，initiator 在 GPU0；同步 READ，实测 10 次 | `bench/nixl_bw.py --mode target/initiator --gpu 1/0 --size 67108864` |
+| NIXL UCX，GPU0 → GPU1 | 256 MiB | 2.84–3.02 | `UCX_TLS=sm,cuda_copy,cuda_ipc,tcp`；`UCX_CUDA_IPC_ENABLE_GET_ZCOPY=on` 强制启用 CUDA IPC `get_zcopy` | target 在 GPU1，initiator 在 GPU0；显式注册 VRAM；同步 READ，实测 10 次；64/128/256 MiB 分别是 2.84/2.91/2.89–3.02 GB/s | `bench/nixl_bw.py --mode target/initiator --gpu 1/0 --size 268435456` |
 | 原生 CUDA P2P，GPU0 → GPU1 | 64 MiB | 33.09 | 直接 CUDA `cudaMemcpyPeer` / CUDA P2P over PCIe | 原生 CUDA p2p benchmark；GPU0 直拷到 GPU1 | `bench/p2p_bw.cu` |
 | PyTorch NCCL P2P | 64 MiB | 34.56 | PyTorch NCCL `dist.send/recv`，NCCL 选择 CUDA P2P/PCIe | 两个 `torchrun` rank，rank0 → GPU0，rank1 → GPU1；同步 send/recv，50 次实测 | `run_logs/nccl_bw.log` |
 | PyTorch NCCL ring AllReduce | 64 MiB | 29.16 effective | NCCL ring，GPU0/GPU1 之间 | 两个 rank；20 次实测；effective BW 扣除 ring 两次流贡献 | `run_logs/nccl_bw.log` |
@@ -20,7 +20,31 @@
 - `Raw CUDA P2P`、PyTorch NCCL P2P、PyTorch NCCL ring AllReduce 都受这台机器的 GPU0↔GPU1 PCIe/system interconnect 限制。
 - FlashInfer PCIe IPC AllReduce 使用融合的 GPU 侧 allreduce/proposal 机制，因此 16 MiB 的结果低于该机器的基本 P2P copy；它减少的是 CPU 侧每次 GPU→GPU 同步的干扰。
 - Mooncake 同 GPU / 跨 GPU 都在 1.4-1.5 GiB/s 左右，因为这台机器没有 RDMA HCA，Mooncake 的本地 RPC 控制面加 TCP fallback 决定了主要瓶颈。
-- NIXL UCX 在这里配置 `TLS=cuda_copy,tcp` 后明显较慢，因为对应 UCX engine/CUDA 序列在本机的 GPU offload 方式不够高效。这个结论只适用于本次测试的 NIXL/UCX 路径。
+- NIXL UCX 在这台机器上必须加 `UCX_CUDA_IPC_ENABLE_GET_ZCOPY=on`，否则 UCX 1.22 会因为没检测到 NVLink 而禁用 CUDA IPC `get_zcopy`，导致回落到低速路径。加上之后 NIXL UCX 能接近 Mooncake 的量级，但仍低于原生 CUDA P2P/NCCL。
+
+## NIXL UCX CUDA IPC 修正说明
+
+### 修正前的三个现象
+
+| UCX 配置 | 现象 | 结论 |
+|---|---|---|
+| `sm,cuda_ipc,tcp` | NIXL 报 `VRAM memory is detected as host by UCX` | 在 NIXL/UCX 当前路径里，只给出 `cuda_ipc` 不够；UCX context 没有显式把 CUDA memory type 起来时，`VRAM` 注册会被拒 |
+| `sm,cuda_copy,cuda_ipc,tcp` | NIXL 能注册并传输，但只有 `0.04 GB/s` | 这一步还是能看到 VRAM，但 UCX 1.22.0 默认没有把 CUDA IPC 当作真正数据面 |
+| `sm,cuda_copy,cuda_ipc,tcp` + `UCX_CUDA_IPC_ENABLE_GET_ZCOPY=on` | NIXL 能稳定跑通 | 强制启用 CUDA IPC 的 `get_zcopy` 后，数据面可用 |
+
+### 根因
+
+UCX 1.22.0 对 `cuda_ipc` 的能力查询里，`get_zcopy` 并不是无条件开启。其 CUDA IPC transport 会在 `ENABLE_GET_ZCOPY=auto` 且系统检测不到 NVLink 时，把 `get_zcopy` 置为不可用。这台机器确实没有 NVLink direct tunnel，所以 UCX 默认推断成“禁用”，导致 NIXL 结束在 TCP/低效回退路径。
+
+把 `UCX_CUDA_IPC_ENABLE_GET_ZCOPY` 改成 `on` 后，这个限制被绕过。此时 UCX 自己也把 `cuda_ipc` 的能力从 `get_zcopy <= 0` 变成 `get_zcopy unlimited`，NIXL 的 end-to-end 数据面就能用 CUDA IPC 了。
+
+### 测试口径
+
+- CRITICAL: 两个进程分别运行在 `GPU0` 和 `GPU1`，不是同一 GPU 的 IPC。
+- 通信方向：`GPU0` 作为 initiator，`GPU1` 作为 target。
+- 传输操作：NIXL `READ`，同步计时。
+- 每个消息规模都做 2 次预热、10 次实测。
+- 结果描述的是 NIXL/UCX end-to-end 路径，不是直接 `cudaMemcpyPeer`。
 
 ### 与官方测试的关系
 
