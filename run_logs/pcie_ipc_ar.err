@@ -1,0 +1,16 @@
+/opt/venv/lib/python3.12/site-packages/torch/cuda/__init__.py:68: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+W0906 05:49:46.652000 38834 torch/distributed/run.py:982] 
+W0906 05:49:46.652000 38834 torch/distributed/run.py:982] *****************************************
+W0906 05:49:46.652000 38834 torch/distributed/run.py:982] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+W0906 05:49:46.652000 38834 torch/distributed/run.py:982] *****************************************
+/opt/venv/lib/python3.12/site-packages/torch/cuda/__init__.py:68: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+/opt/venv/lib/python3.12/site-packages/torch/cuda/__init__.py:68: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+/opt/venv/lib/python3.12/site-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  return func(*args, **kwargs)
+/opt/venv/lib/python3.12/site-packages/flashinfer/comm/pcie_ipc_ar.py:669: UserWarning: PCIe IPC all-reduce is running seed launch configurations: nothing has been tuned for 2 ranks on this machine (/cache/jit/flashinfer/.cache/flashinfer/0.6.18/120a/autotune/pcie_ipc_all_reduce_ws2.json does not exist). The seed picks a workable kernel, not a fast one. Call workspace.tune([hidden]) once per machine; the result is persisted and later processes pick it up.
+  config = self.tuned_launch_config(inp)
+/opt/venv/lib/python3.12/site-packages/flashinfer/comm/pcie_ipc_ar.py:669: UserWarning: PCIe IPC all-reduce is running seed launch configurations: nothing has been tuned for 2 ranks on this machine (/cache/jit/flashinfer/.cache/flashinfer/0.6.18/120a/autotune/pcie_ipc_all_reduce_ws2.json does not exist). The seed picks a workable kernel, not a fast one. Call workspace.tune([hidden]) once per machine; the result is persisted and later processes pick it up.
+  config = self.tuned_launch_config(inp)

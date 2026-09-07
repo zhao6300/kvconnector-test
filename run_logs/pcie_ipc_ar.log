@@ -1,0 +1,9 @@
+workspace created, world=2, max_numel=8388608
+skip size 67108864 (larger than workspace)
+# FlashInfer PCIe IPC AR (world_size=2)
+     size(B)   time(us)       BW(Gb/s)
+        4096      38.41           0.11
+       65536      37.95           1.73
+     1048576      48.15          21.78
+     4194304     200.85          20.88
+    16777216     827.01          20.29
