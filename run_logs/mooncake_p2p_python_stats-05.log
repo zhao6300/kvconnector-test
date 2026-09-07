@@ -1,0 +1,29 @@
+/opt/venv/lib/python3.12/site-packages/torch/cuda/__init__.py:68: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+WARNING: Logging before InitGoogleLogging() is written to STDERR
+I20260907 09:33:37.424530 175552 transfer_engine_py.cpp:113] Selected Intra-NVLink memory allocator
+I20260907 09:33:37.424606 175552 transfer_engine_impl.cpp:1046] Metrics reporting is disabled (set MC_TE_METRIC=1 to enable)
+I20260907 09:33:37.424638 175552 transfer_engine_impl.cpp:116] Transfer Engine parseHostNameWithPort. server_name: 127.0.0.1 port: 12001
+I20260907 09:33:37.424674 175552 transfer_engine_impl.cpp:183] Transfer Engine RPC using P2P handshake, listening on 127.0.0.1:15372
+I20260907 09:33:37.424750 175552 transfer_engine_impl.cpp:259] Auto-discovering topology...
+W20260907 09:33:37.424847 175552 topology.cpp:205] No RDMA devices found, check your device installation
+I20260907 09:33:37.424885 175552 transfer_engine_impl.cpp:274] Topology discovery complete. Found 0 HCAs.
+I20260907 09:33:37.424903 175552 transfer_engine_impl.cpp:369] Using Intra-Node NVLink transport (MC_INTRANODE_NVLINK set)
+/opt/venv/lib/python3.12/site-packages/torch/cuda/__init__.py:68: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+WARNING: Logging before InitGoogleLogging() is written to STDERR
+I20260907 09:33:39.133337 175550 transfer_engine_py.cpp:113] Selected Intra-NVLink memory allocator
+I20260907 09:33:39.133420 175550 transfer_engine_impl.cpp:1046] Metrics reporting is disabled (set MC_TE_METRIC=1 to enable)
+I20260907 09:33:39.133448 175550 transfer_engine_impl.cpp:116] Transfer Engine parseHostNameWithPort. server_name: 127.0.0.1 port: 12001
+I20260907 09:33:39.133487 175550 transfer_engine_impl.cpp:183] Transfer Engine RPC using P2P handshake, listening on 127.0.0.1:16679
+I20260907 09:33:39.133559 175550 transfer_engine_impl.cpp:259] Auto-discovering topology...
+W20260907 09:33:39.133663 175550 topology.cpp:205] No RDMA devices found, check your device installation
+I20260907 09:33:39.133704 175550 transfer_engine_impl.cpp:274] Topology discovery complete. Found 0 HCAs.
+I20260907 09:33:39.133733 175550 transfer_engine_impl.cpp:369] Using Intra-Node NVLink transport (MC_INTRANODE_NVLINK set)
+I20260907 09:33:39.144207 175550 intranode_nvlink_transport.cpp:83] IntraNodeNvlinkTransport: NVLink CUDA stream created on device 0 [physical: NVIDIA RTX PRO 6000 Blackwell Server Edition PCI 22:0] CUDA_VISIBLE_DEVICES=(not set) pid=175550
+I20260907 09:33:39.146552 175550 intranode_nvlink_transport.cpp:197] IntraNodeNvlinkTransport: using cudaMemcpyBatchAsync (CUDA >= 13.0 path)
+source_gpu=0 target_gpu=1 pool=268435456 pieces=1
+write_bw=32.80 GB/s (35.22 GiB/s)
+write_rounds=123 wall=1.006s
+read_bw=37.79 GB/s (40.57 GiB/s)
+read_rounds=141 wall=1.002s
