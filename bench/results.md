@@ -1,26 +1,36 @@
-# GPU Communication Benchmark Summary
+# GPU 通信基准测试
 
-Environment used for these runs: 4 GPUs, no RDMA/RoCE HCA, and `GPU0-GPU1` had a `NODE` connection rather than an NVLink tunnel. Bandwidth values are one-way source-to-target bandwidth unless stated otherwise.
+测试环境：4 块 GPU，无 RDMA/RoCE HCA；`GPU0-GPU1` 是 `NODE` 连接，而不是 NVLink direct tunnel。除非另有说明，这里的带宽都是单路 source→target 带宽。
 
-| Test | Size | Result | Path | Test setup | Version |
+| 测试 | 数据量 | 结果 | 通信/存储路径 | 测试 setup | 引用 |
 |---|---:|---:|---|---|---|
-| CUDA IPC, same GPU | 64 MiB | 1524.5 GiB/s | GPU0 device memory copy after cross-process CUDA IPC | Two processes both allocate on `cuda:0`; one exports memory to the other; timed destination `copy_(src)` on CUDA events | `bench/gpu_ipc_bw.py` |
-| Mooncake, same GPU | 64 MiB | write 1.496 GiB/s; read 1.469 GiB/s | Same-GPU registered VRAM through Mooncake TransferEngine; no RDMA, so engine RPC/TCP fallback controls transfer | Source and destination buffers both on `cuda:0`; `transfer_sync_write/read`, 50 measured iterations | `bench/mooncake_transfer_cross_gpu.py --source-gpu 0 --target-gpu 0` |
-| Mooncake, GPU0 to GPU1 | 64 MiB | write 1.385 GiB/s; read 1.415 GiB/s | Cross-GPU registered VRAM via Mooncake TransferEngine; no RDMA, so local TCP fallback controls transfer | Source on `cuda:0`, target on `cuda:1`; two TransferEngines; `transfer_sync_write/read`, 50 measured iterations | `bench/mooncake_transfer_cross_gpu.py --source-gpu 0 --target-gpu 1` |
-| NIXL UCX, GPU0 to GPU1 | 64 MiB | 0.04 | UCX CUDA transport bound to `TLS=cuda_copy,tcp` | Target allocates on GPU1 and initiator on GPU0; synchronous READ, 10 measured iterations | `bench/nixl_bw.py --mode target/initiator --gpu 1/0 --size 67108864` |
-| Raw CUDA P2P, GPU0 to GPU1 | 64 MiB | 33.09 | Direct CUDA `cudaMemcpyPeer` / CUDA P2P over PCIe | Native CUDA p2p benchmark; GPU0 copies directly to GPU1; 64 MiB row from native benchmark | `bench/p2p_bw.cu` |
-| PyTorch NCCL P2P | 64 MiB | 34.56 | PyTorch NCCL `dist.send/recv`, NCCL chooses CUDA P2P/PCIe | Two `torchrun` ranks map rank0 to GPU0 and rank1 to GPU1; synchronous send/recv, 50 measured iterations | `run_logs/nccl_bw.log` |
-| PyTorch NCCL ring AllReduce | 64 MiB | 29.16 effective | NCCL ring protocol over the same GPU0/GPU1 communication path | Two ranks on GPU0/GPU1; 20 measured iterations; effective BW excludes the two ring stream contributions | `run_logs/nccl_bw.log` |
-| PyTorch NCCL ring AllReduce | 256 MiB | 29.80 effective | NCCL ring protocol over the same GPU0/GPU1 communication path | Same as above, largest logged message | `run_logs/nccl_bw.log` |
-| FlashInfer PCIe IPC AllReduce | 16 MiB bf16 | 20.29 | SM-resident buffers shared through CUDA IPC/GPU shared memory | Two ranks on GPU0/GPU1 use FlashInfer `PcieIpcAllReduceWorkspace`; 50 measured iterations; log column is labeled `Gb/s` but the formula returns byte bandwidth | `bench/pcie_ipc_ar.py` and `run_logs/pcie_ipc_ar.log` |
+| CUDA IPC，同 GPU | 64 MiB | 1524.5 GiB/s | GPU0 跨进程 CUDA IPC 显存拷贝 | 两个进程都在 `cuda:0` 上分配内存；一个进程导出，另一个进程导入，再用 CUDA events 计时目标侧的 `copy_(src)` | `bench/gpu_ipc_bw.py` |
+| Mooncake，同 GPU | 64 MiB | write 1.496 GiB/s；read 1.469 GiB/s | Mooncake TransferEngine 使用同 GPU 已注册 VRAM；无 RDMA，引擎 RPC/TCP fallback 控制实际速度 | source 和 destination 都在 `cuda:0`；`transfer_sync_write/read`，实测 50 次 | `bench/mooncake_transfer_cross_gpu.py --source-gpu 0 --target-gpu 0` |
+| Mooncake，GPU0 → GPU1 | 64 MiB | write 1.385 GiB/s；read 1.415 GiB/s | Mooncake TransferEngine 使用跨 GPU 已注册 VRAM；无 RDMA，本机 TCP fallback 控制实际速度 | source 在 `cuda:0`，target 在 `cuda:1`；两个 TransferEngine 通信 | `bench/mooncake_transfer_cross_gpu.py --source-gpu 0 --target-gpu 1` |
+| NIXL UCX，GPU0 → GPU1 | 64 MiB | 0.04 | UCX CUDA transport，绑定 `TLS=cuda_copy,tcp` | target 在 GPU1，initiator 在 GPU0；同步 READ，实测 10 次 | `bench/nixl_bw.py --mode target/initiator --gpu 1/0 --size 67108864` |
+| 原生 CUDA P2P，GPU0 → GPU1 | 64 MiB | 33.09 | 直接 CUDA `cudaMemcpyPeer` / CUDA P2P over PCIe | 原生 CUDA p2p benchmark；GPU0 直拷到 GPU1 | `bench/p2p_bw.cu` |
+| PyTorch NCCL P2P | 64 MiB | 34.56 | PyTorch NCCL `dist.send/recv`，NCCL 选择 CUDA P2P/PCIe | 两个 `torchrun` rank，rank0 → GPU0，rank1 → GPU1；同步 send/recv，50 次实测 | `run_logs/nccl_bw.log` |
+| PyTorch NCCL ring AllReduce | 64 MiB | 29.16 effective | NCCL ring，GPU0/GPU1 之间 | 两个 rank；20 次实测；effective BW 扣除 ring 两次流贡献 | `run_logs/nccl_bw.log` |
+| PyTorch NCCL ring AllReduce | 256 MiB | 29.80 effective | NCCL ring，GPU0/GPU1 之间 | 同上，这是本次测到的最大消息规模 | `run_logs/nccl_bw.log` |
+| FlashInfer PCIe IPC AllReduce | 16 MiB bf16 | 20.29 | SM-resident buffer，通过 CUDA IPC/GPU 共享内存通信 | 两个 rank 在 GPU0/GPU1 上使用 FlashInfer `PcieIpcAllReduceWorkspace`；50 次实测；日志列名 `Gb/s` 但计算公式返回的是 byte bandwidth | `bench/pcie_ipc_ar.py` + `run_logs/pcie_ipc_ar.log` |
 
-## Interpretation
+## 解释
 
-- `CUDA IPC same GPU` is the on-device copy/path bandwidth across two processes on GPU0 and is not comparable with GPU0-to-GPU1 rows.
-- `Raw CUDA P2P`, NCCL P2P, and NCCL ring AllReduce are all limited by GPU0-to-GPU1 PCIe/system interconnect in this host.
-- FlashInfer PCIe IPC AllReduce adds a fused GPU-side allreduce/proposal mechanism, so its 16 MiB result is below this host's basic P2P copy, though it avoids CPU-managed per-copy GPU-to-GPU synchronization.
-- Mooncake same/cross GPU gives ~1.4-1.5 GiB/s because this environment has no RDMA HCA here, and Mooncake's local RPC control plane plus TCP fallback dominate the transfer.
-- NIXL UCX, as tested here with `TLS=cuda_copy,tcp`, is far slower because the configured UCX engine/CUDA sequence offloads GPU transfers inefficiently on this host. This conclusion only applies to the tested NIXL/UCX path.
+- `CUDA IPC same GPU` 是跨两个进程但同一 GPU0 内部的显存拷贝路径，不应直接和 GPU0→GPU1 的跨 GPU 行对比。
+- `Raw CUDA P2P`、PyTorch NCCL P2P、PyTorch NCCL ring AllReduce 都受这台机器的 GPU0↔GPU1 PCIe/system interconnect 限制。
+- FlashInfer PCIe IPC AllReduce 使用融合的 GPU 侧 allreduce/proposal 机制，因此 16 MiB 的结果低于该机器的基本 P2P copy；它减少的是 CPU 侧每次 GPU→GPU 同步的干扰。
+- Mooncake 同 GPU / 跨 GPU 都在 1.4-1.5 GiB/s 左右，因为这台机器没有 RDMA HCA，Mooncake 的本地 RPC 控制面加 TCP fallback 决定了主要瓶颈。
+- NIXL UCX 在这里配置 `TLS=cuda_copy,tcp` 后明显较慢，因为对应 UCX engine/CUDA 序列在本机的 GPU offload 方式不够高效。这个结论只适用于本次测试的 NIXL/UCX 路径。
+
+### 与官方测试的关系
+
+这些测试不是逐字复刻官方 benchmark 脚本，而是使用官方 API 加上本机可复现的小型测试组合：
+
+- Mooncake 使用的是官方 `TransferEngine` 的同步 API。
+- NIXL 使用的是官方 `nixl_agent`/UCX 接口。
+- CUDA P2P/IPC/NCCL/FlashInfer 都是本机直接调用的标准 API。
+
+因此这里的结果定位是：**在同一台机器上验证各通信路径的真实走向和性能下限**，而不是说它和上游官方 benchmark 完全等价。
 
 ## Connector / P-D 形态汇总
 
