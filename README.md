@@ -54,6 +54,17 @@ cmake --build /tmp/mooncake-build-minimal -j 64 \
 
 如果本机已经有构建产物，也可以用 `MOONCAKE_BENCH_BIN` 环境变量给脚本指定二进制路径。Python 快速测试里的 `protocol=tcp` 只是验证回退路径，不是这套高带宽测项。
 
+Mooncake P2P 也可以完全用 Python 绑定来跑，不用依赖上面的 C++ benchmark 二进制：
+
+```bash
+MC_INTRANODE_NVLINK=1 MC_USE_NVLINK_IPC=1 \
+/opt/venv/bin/python bench/mooncake_p2p_python_bench.py \
+  --source-gpu 0 --target-gpu 1 \
+  --pool-size 268435456 --pieces 1 --runtime 1.0
+```
+
+这版走的是 Mooncake Python `TransferEngine` 的 `nvlink_intra` 路径，再落到 CUDA IPC + `cudaMemcpyBatchAsync`/GPU P2P。它适合快速验证和重复采样；如果需要和官方 C++ benchmark 的提交线程模型逐项对齐，还是用上面的官方二进制。5 次统计结果显示 write 约为 `33.06±0.37 GB/s`，read 约为 `37.11±1.51 GB/s`。
+
 ## 阅读结果
 
 `bench/results.md` 包含实测带宽和对应通信路径的简单解读，另外还给了 Nixl、Mooncake、LMCache、FlexKV 的连接器对比。
