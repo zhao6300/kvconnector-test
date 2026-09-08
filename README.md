@@ -13,7 +13,7 @@
 ## 目录结构
 
 - `bench/` : GPU 通信、Mooncake、NIXL、CUDA P2P、NCCL、FlashInfer 等基准脚本与 connector 语义说明。
-- `tests/local/` : 本机 GPU/host memory 对照测试，覆盖 PyTorch、raw CUDA memcpy、CUDA pinned pool、raw CUDA kernel 和 Triton kernel。
+- `tests/local/` : 本机 GPU/host memory 对照测试，覆盖 PyTorch、raw CUDA memcpy、CUDA pinned pool、raw CUDA kernel、Triton kernel、同一 GPU 内 SM 级并发读取和多 GPU 并发读 host memory。
 - `docs/` : 实测带宽、通信路径、关键限制和连接器语义，以及复现说明。
 - `logs/` : 部分代表性运行的 stdout/stderr 快照。
 - `scripts/run_all.sh` : 一键复现入口。
@@ -57,6 +57,16 @@ nvcc -O3 -std=c++17 -arch=native tests/local/gpu_kernel_rw.cu \
 /opt/venv/bin/python tests/local/cpu_pinned_pool.py \
   --gpu 0 --pool-size $((256*1024*1024)) --chunks 64 \
   --warmup 5 --iters 10 --direction d2h
+
+./tests/local/host_mem_bw --mode read --threads 128 \
+  --size $((4*1024*1024*1024)) --warmup 2 --iters 5
+
+/opt/venv/bin/python tests/local/gpu_sm_read.py \
+  --gpu 0 --size $((256*1024*1024)) --sm 188 \
+  --warmup 5 --iters 10
+
+/opt/venv/bin/python tests/local/gpu_multi_read.py \
+  --gpus 4 --numel $((64*1024*1024)) --warmup 5 --iters 10
 ```
 
 ## GPU 通信及 connector 测试
@@ -129,6 +139,7 @@ UCX_TLS=sm,cuda_copy,cuda_ipc,tcp UCX_CUDA_IPC_ENABLE_GET_ZCOPY=on \
 
 - [`docs/results.md`](docs/results.md) 记录实测带宽、真实通信路径、限制条件与连接器语义。
 - [`docs/dvram_results.md`](docs/dvram_results.md) 记录本机 GPU 显存、pinned host memory、pinned pool、PyTorch copy 的带宽对照。
+- 其中也包括同一 GPU 内不同并发 program 的 SM 级读取曲线、host CPU 多线程读取上限，以及多 GPU 共读同一 pinned host memory 的扩展结果。
 - [`docs/repro.md`](docs/repro.md) 是按场景写好的复现入口。
 - [`logs/`](logs/) 保存的是部分代表性 stdout/stderr，不是独立结果文件。
 

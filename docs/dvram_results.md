@@ -3,7 +3,10 @@
 ## 一句话结论
 
 - 单 GPU 显存 kernel 读/写大约在 `1.35–1.41 TB/s`。
+- 同一 GPU 内并发 Triton program 从 `8` 增到接近物理 SM 数 `188` 时，读带宽从约 `72 GiB/s` 增到约 `1298 GiB/s`。
 - pinned host memory zero-copy 大约 `48 GiB/s`。
+- 多 GPU 并发读同一份 pinned host memory 时，2 卡聚合约 `95 GiB/s`；4 卡聚合降到约 `103 GiB/s`，不是继续 4 倍线性。
+- CPU 多线程连续读 host memory，`64/128/256 thread` 聚合带宽约 `190–232 GiB/s`。
 - 标准 pinned host pool H2D/D2H 大约 `51–53 GiB/s`。
 - PyTorch framework copy 路径明显低于 raw DMA/kernel，尤其 pageable 只有约 `10 GiB/s`。
 
@@ -11,7 +14,7 @@
 
 - 机器：本地单机，无 RDMA/RoCE HCA。
 - GPU：`RTX PRO 6000 Blackwell Server Edition`，97.9 GiB 显存。
-- 本组测试固定使用 `GPU0`。
+- 有 4 张同型号 GPU；本组部分固定使用 `GPU0`，并发多 GPU 场景按表格说明使用 `GPU0–GPU3`。
 - CUDA：`13.2`
 - Python：`3.12`
 - PyTorch：`2.15.0a0+git04b971a`
@@ -19,6 +22,7 @@
 - 统一参数：`256 MiB` 数据块，5 次预热，10 次实测。
 - 带宽单位：`GiB/s`（1 GiB = 2^30 bytes）。
 - `device_copy` 与 `host_pinned_copy` 由同一个 kernel 同时做读和写，因此带宽按 `2 × bytes / time` 计算。
+- SM 读取测试不是把某个 program 物理绑定到一个 SM；这里的 `sm` 是 Triton program 并发度。
 
 ## 结果总览
 
@@ -33,6 +37,17 @@
 | `device_write` | Triton kernel | GPU DRAM 写 | 1407.5 | Triton 显式 `tl.store` |
 | `device_copy` | Triton kernel | GPU DRAM 读+写 | 1361.5 | Triton kernel 内部逐元素读 device buffer 写另一个 device buffer |
 
+### 同一 GPU DRAM 的并发 program 读取
+
+| Triton program | GPU | 数据块 | 结果 (GiB/s) | 每并发单位结果 (GiB/s) | 说明 |
+|---:|---|---:|---:|---:|---|
+| 1 | GPU0 | 256 MiB | 9.3 | 9.3 | 单个 program 顺序遍历显存 |
+| 8 | GPU0 | 256 MiB | 72.5 | 9.1 | 并发度低，接近线性扩展 |
+| 32 | GPU0 | 256 MiB | 299.2 | 9.3 | 并发请求开始同时占用显存通道 |
+| 64 | GPU0 | 256 MiB | 595.7 | 9.3 | 仍接近线性扩展 |
+| 128 | GPU0 | 256 MiB | 1074.4 | 8.4 | 物理资源和调度开始形成饱和趋势 |
+| 188 | GPU0 | 256 MiB | 1298.2 | 6.9 | 接近 GPU0 的 188 个物理 SM 数，聚合接近本组 raw CUDA 读上限 |
+
 ### pinned host memory zero-copy access
 
 | 场景 | 实现 | 访问路径 | 结果 (GiB/s) | 说明 |
@@ -43,6 +58,24 @@
 | `host_pinned_read` | Triton kernel | pinned host memory zero-copy 读 | 47.8 | Triton kernel 直接从 pinned host memory 读 |
 | `host_pinned_write` | Triton kernel | pinned host memory zero-copy 写 | 48.9 | Triton kernel 直接写 pinned host memory |
 | `host_pinned_copy` | Triton kernel | pinned host memory 读+写 | 71.9 | 一个 Triton kernel 同时从一段 pinned host memory 读，并写另一段 |
+
+### 多 GPU 并发读同一份 pinned host memory
+
+| GPU 数 | 单卡数据 | pinned 源数据 | 单卡读 (GiB/s) | 聚合读 (GiB/s) | 说明 |
+|---:|---:|---:|---:|---:|---|
+| 1 | 256 MiB | 256 MiB | 47.6 | 47.6 | 一张 GPU 通过 mapped pinned memory 直接读 |
+| 2 | 256 MiB | 256 MiB | 47.7 | 95.5 | 2 张 GPU 并发读同一份只读源 |
+| 4 | 256 MiB | 256 MiB | 23.0–25.7 | 92.3–102.9 | 4 张 GPU 并发读同一份只读源，单卡吞吐下降明显 |
+
+这里所有 GPU 读的是同一份 pinned host memory，而不是把数据复制到 4 张卡的显存。2 张 GPU 时基本能保持各自单卡吞吐；扩到 4 张 GPU 后会形成明显的 host memory/root complex 争用。这个结果比“单卡读数 × GPU 数”更可靠。
+
+### Host memory CPU 多线程读取上限
+
+| CPU thread | 单线程分片 | 总读取量/迭代 | 结果 (GiB/s) | 说明 |
+|---:|---:|---:|---:|---|
+| 64 | 64 MiB | 4 GiB | 190.3 | 物理核粒度读，两个 NUMA domain 都已有负载 |
+| 128 | 32 MiB | 4 GiB | 189.6 | 覆盖全部硬件线程，结果与 64 thread 基本一致 |
+| 256 | 16 MiB | 4 GiB | 231.8 | 使用超线程后读吞吐进一步上升，反映 host memory/PQ 的并发能力 |
 
 ### 标准 H2D/D2H 与 pinned host pool
 
@@ -100,6 +133,16 @@
    `pageable_copy/pageable_to` 约在 `10 GiB/s`，`pinned_copy/pinned_to` 提升到约 `25 GiB/s`。  
    这代表的是 **framework copy overhead**，不能等同于 raw loader/store 结果或峰值内存带宽。
 
+6. **SM 级读取必须有足够并发才能吃到显存带宽**
+
+   单 Triton program 只有约 `9.3 GiB/s`；并发数到 `188` 时达到约 `1298 GiB/s`\
+   这说明显存带宽不是由一个串行执行流复用出来的，而是由大量并发 load 请求填满的。这里的程序数接近但不等于“每个 program 精确独占一个物理 SM”。
+
+7. **多 GPU 并发 host 读不是把 PCIe 复制成一条成比例更宽的路径**
+
+   每个 GPU 仍走自己的 PCIe 链路去 host memory\
+   2 卡时聚合接近线性，但 4 卡时每卡吞吐降到约 `23–26 GiB/s`，聚合约 `92–103 GiB/s`。这说明 host memory 前端、CPU 物理 topology 或 PCIe root complex 已经成为共享瓶颈。
+
 ## 运行方式
 
 ```bash
@@ -121,6 +164,15 @@ nvcc -O3 -std=c++17 -arch=native tests/local/gpu_kernel_rw.cu \
 
 /opt/venv/bin/python tests/local/cpu_pinned_pool.py \
   --gpu 0 --pool-size $((256*1024*1024)) --chunks 64 --warmup 5 --iters 10 --direction d2h
+
+/opt/venv/bin/python tests/local/gpu_sm_read.py \
+  --gpu 0 --size $((256*1024*1024)) --sm 188 --warmup 5 --iters 10
+
+./tests/local/host_mem_bw --mode read --threads 128 \
+  --size $((4*1024*1024*1024)) --warmup 2 --iters 5
+
+/opt/venv/bin/python tests/local/gpu_multi_read.py \
+  --gpus 4 --numel $((64*1024*1024)) --warmup 5 --iters 10
 ```
 
 ## 注意事项
@@ -129,4 +181,6 @@ nvcc -O3 -std=c++17 -arch=native tests/local/gpu_kernel_rw.cu \
 - `pinned host memory` 读数是 mapped device pointer 上的带宽，不是标准 `cudaMemcpy`。
 - raw CUDA/Triton kernel 的 `device_copy` 使用了两个 device buffer，不等于同 GPU 两 peer 的 cross-GPU bandwidth。
 - `H2D` 与 `D2H` 差异非常小，主要来自噪声、allocator/driver 细节和测试噪声。
+- host memory CPU 读受 NUMA、内存控制器分布、缓存状态和线程调度影响；大块连续读能减少噪声，但固定数值应理解为本机当时的实测上限。
+- `gpu_multi_read` 的每张 GPU 都从同一 pinned 缓冲区读，测试语义是 4 个独立 PCIe 读流。
 - `GiB/s` 按 2^30 计算。

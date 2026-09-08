@@ -23,3 +23,5 @@ dist/
 *.so
 *.out
 local_mem_tests/gpu_kernel_rw
+tests/local/gpu_kernel_rw
+tests/local/host_mem_bw

@@ -6,6 +6,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PY="${PY:-/opt/venv/bin/python}"
 GPU=0
 SIZE=$((256*1024*1024))
+HOST_MEM_SIZE=$((4*1024*1024*1024))
 WARMUP=5
 ITERS=10
 FULL=0
@@ -66,6 +67,16 @@ if [[ ! -x "$PY" ]]; then
   exit 1
 fi
 
+if command -v nvidia-smi >/dev/null 2>&1; then
+  GPU_COUNT=$(nvidia-smi --list-gpus | wc -l)
+else
+  GPU_COUNT=1
+fi
+
+if [[ ! -x tests/local/host_mem_bw ]]; then
+  g++ -O3 -std=c++17 tests/local/host_mem_bw.cc -o tests/local/host_mem_bw
+fi
+
 run_local() {
   if [[ ! -x "$BIN" ]]; then
     nvcc -O3 -std=c++17 -arch=native \
@@ -97,6 +108,29 @@ run_local() {
   "$PY" tests/local/cpu_pinned_pool.py \
         --gpu "$GPU" --pool-size "$SIZE" --chunks 64 \
         --warmup "$WARMUP" --iters "$ITERS" --direction d2h
+
+  GPU_SM_COUNT=$("$PY" - "$GPU" <<'PYCODE'
+import sys
+import torch
+print(torch.cuda.get_device_properties(int(sys.argv[1])).multi_processor_count)
+PYCODE
+)
+
+  log "local same-GPU SM concurrency"
+  "$PY" tests/local/gpu_sm_read.py \
+        --gpu "$GPU" --size "$SIZE" --sm "$GPU_SM_COUNT" \
+        --warmup "$WARMUP" --iters "$ITERS"
+
+  log "local host memory CPU read"
+  ./tests/local/host_mem_bw --mode read --threads 128 \
+        --size "$HOST_MEM_SIZE" --warmup 2 --iters 5
+
+  if [[ "$GPU_COUNT" -gt 1 ]]; then
+    log "local multiple-GPU read host memory"
+    "$PY" tests/local/gpu_multi_read.py \
+          --gpus "$GPU_COUNT" --numel "$((64 * 1024 * 1024))" \
+          --warmup "$WARMUP" --iters "$ITERS"
+  fi
 }
 
 run_full() {
