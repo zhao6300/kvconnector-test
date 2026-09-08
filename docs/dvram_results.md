@@ -59,6 +59,23 @@
 | `host_pinned_write` | Triton kernel | pinned host memory zero-copy 写 | 48.9 | Triton kernel 直接写 pinned host memory |
 | `host_pinned_copy` | Triton kernel | pinned host memory 读+写 | 71.9 | 一个 Triton kernel 同时从一段 pinned host memory 读，并写另一段 |
 
+### CUDA kernel 直读 CPU pinned memory
+
+下面这个测试的 kernel 直接从 CPU pinned memory 读数据，源内存不是显存。
+它使用 raw CUDA kernel、`float4 + __ldcs`，并通过 `cudaHostAllocMapped` 把 host memory 映射给 kernel。
+每次 launch 读取一段不同地址窗口，减少同一片数据重复命中显存各级 cache 的干扰。
+
+| Block 数 | 单块数据 | 结果 (GiB/s) | 说明 |
+|---:|---:|---:|---|
+| 1 | 256 MiB | 3.768 | 单 block 读取，host memory/PCIe 路径还没吃满 |
+| 8 | 256 MiB | 25.029 | 多 block 并发后明显提升 |
+| 32 | 256 MiB | 47.744 | 接近 host memory read 侧带宽上限 |
+| 64 | 256 MiB | 47.732 | 结果和 32 block 基本一致 |
+| 128 | 256 MiB | 47.748 | 结果和 32/64 block 基本一致 |
+| 188 | 256 MiB | 47.769 | 接近物理 SM 数，也说明路径已经饱和 |
+
+这条路径的结论很明确：Host memory 直读 kernel 在本机上的带宽上限就是约 `47.7 GiB/s`，继续增加 CUDA block 数不会再提升吞吐。它和 GPU 显存直读（约 `1360 GiB/s`）不在同一量级。
+
 ### 多 GPU 并发读同一份 pinned host memory
 
 | GPU 数 | 单卡数据 | pinned 源数据 | 单卡读 (GiB/s) | 聚合读 (GiB/s) | 说明 |
